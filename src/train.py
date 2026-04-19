@@ -10,7 +10,7 @@ from torch.optim.lr_scheduler import LambdaLR
 from torch.cuda.amp import autocast
 from torchvision.utils import save_image
 
-from config import *
+from config.config import *
 from utils import set_seed, weights_init, EMA, DiffAug
 from model.generator import Generator
 from model.discriminator import Discriminator

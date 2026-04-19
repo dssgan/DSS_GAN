@@ -6,34 +6,116 @@ import matplotlib.pyplot as plt
 from PIL import Image, ImageDraw
 
 
-# ── grid ──────────────────────────────────────────────────────────────────────
-
+def generate_grid_simple(G, device, Z_DIM, num_samples, cols, psi=0.7, seed=None, save=False):
+    if seed is not None:
+        torch.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
+    
+    rows = (num_samples + cols - 1) // cols
+    
+    # Find actual number of classes from model
+    max_classes = None
+    for name, module in G.named_modules():
+        if isinstance(module, torch.nn.Embedding):
+            max_classes = module.num_embeddings
+            print(f"Found embedding: {name} with {max_classes} classes")
+            break
+    
+    if max_classes is None:
+        print("WARNING: No embedding found, trying class 0 only")
+        max_classes = 1
+    
+    with torch.no_grad():
+        z = torch.randn(num_samples, Z_DIM, device=device) * psi
+        
+        # SAFE: Use only valid class indices
+        y = torch.randint(0, max_classes, (num_samples,), device=device)
+        
+        print(f"Generating with z: {z.shape}, y: {y.shape}, y range: [{y.min()}, {y.max()}]")
+        
+        try:
+            imgs = G(z, y)
+            print(f"✓ Generation successful! Output shape: {imgs.shape}")
+        except RuntimeError as e:
+            print(f"✗ Generation failed: {e}")
+            return
+        
+        print(f"Output range: [{imgs.min().item():.3f}, {imgs.max().item():.3f}]")
+        imgs_np = (imgs.cpu().float() * 0.5 + 0.5).clamp(0, 1)
+    
+    fig, axes = plt.subplots(rows, cols,
+                             figsize=(cols * 2.5, rows * 2.5),
+                             gridspec_kw={'wspace': 0.02, 'hspace': 0.02})
+    
+    if rows == 1 and cols == 1:
+        axes = np.array([[axes]])
+    elif rows == 1:
+        axes = axes[np.newaxis, :]
+    elif cols == 1:
+        axes = axes[:, np.newaxis]
+    
+    for idx in range(rows * cols):
+        row = idx // cols
+        col = idx % cols
+        ax = axes[row, col]
+        
+        if idx < num_samples:
+            img = imgs_np[idx].permute(1, 2, 0).numpy()
+            ax.imshow(img, interpolation='lanczos')
+        else:
+            ax.axis('off')
+        
+        ax.set_xticks([])
+        ax.set_yticks([])
+        for spine in ax.spines.values():
+            spine.set_visible(False)
+    
+    plt.tight_layout(pad=0.1)
+    
+    if save:
+        plt.savefig(save, bbox_inches='tight', pad_inches=0.1, dpi=150)
+    plt.show()
+    
 def generate_grid(G, device, Z_DIM, NUM_CLASSES, N_PER_CLASS, N_SHOW,
                   CLASS_NAMES, psi=0.8, seed=None, save=False):
     if seed is not None:
         torch.manual_seed(seed)
         torch.cuda.manual_seed_all(seed)
+    
     with torch.no_grad():
-        z_single = torch.randn(N_PER_CLASS, Z_DIM, device=device) * psi
-        z = z_single.repeat(NUM_CLASSES, 1)
-        y = torch.tensor([c for c in range(NUM_CLASSES) for _ in range(N_PER_CLASS)], device=device)
+        z = torch.randn(N_PER_CLASS, Z_DIM, device=device) * psi
+        z = z.repeat_interleave(NUM_CLASSES, dim=0)
+        y = torch.arange(NUM_CLASSES, device=device).repeat(N_PER_CLASS)
+        
         imgs = G(z, y)
         imgs_np = (imgs.cpu().float() * 0.5 + 0.5).clamp(0, 1)
+    
     fig, axes = plt.subplots(N_SHOW, NUM_CLASSES,
                              figsize=(NUM_CLASSES * 2.2, N_SHOW * 2.2),
                              gridspec_kw={'wspace': 0.03, 'hspace': 0.03})
+    
+    # FIX: Ensure axes is always 2D
+    if N_SHOW == 1 and NUM_CLASSES == 1:
+        axes = np.array([[axes]])
+    elif N_SHOW == 1:
+        axes = axes[np.newaxis, :]  # Shape: (1, NUM_CLASSES)
+    elif NUM_CLASSES == 1:
+        axes = axes[:, np.newaxis]  # Shape: (N_SHOW, 1)
+    
     for cls_id in range(NUM_CLASSES):
         for j in range(N_SHOW):
             ax = axes[j, cls_id]
-            img = imgs_np[cls_id * N_PER_CLASS + j].permute(1, 2, 0).numpy()
+            idx = j * NUM_CLASSES + cls_id
+            img = imgs_np[idx].permute(1, 2, 0).numpy()
             ax.imshow(img, interpolation='lanczos')
             ax.set_xticks([]); ax.set_yticks([])
             for spine in ax.spines.values():
                 spine.set_visible(False)
             if j == 0:
                 ax.set_title(CLASS_NAMES[cls_id], fontsize=10, pad=4)
+    
     if save:
-        plt.savefig(save, bbox_inches='tight', pad_inches=0.1)
+        plt.savefig(save, bbox_inches='tight', pad_inches=0.1, dpi=150)
     plt.show()
 
 
@@ -306,4 +388,126 @@ def plot_override(G, device, SCAN_DIRECTIONS, z, base_cls, override_cls,
         ext = save_path.rsplit('.', 1)[-1].lower()
         plt.savefig(save_path, bbox_inches='tight', dpi=(None if ext == 'pdf' else 300))
         print(f"Saved: {save_path}")
+    plt.show()
+
+def generate_grid_simple(G, device, Z_DIM, num_samples, cols, psi=0.7, seed=None, save=False):
+    """
+    Generate a simple grid of unconditional samples (or fixed class).
+    
+    Args:
+        G: Generator model
+        device: torch device
+        Z_DIM: latent dimension
+        num_samples: total number of images to generate
+        cols: number of columns in grid
+        psi: truncation parameter (0.6-1.0)
+        seed: random seed
+        save: filename to save (or False)
+    """
+    if seed is not None:
+        torch.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
+    
+    rows = (num_samples + cols - 1) // cols  # Ceiling division
+    
+    with torch.no_grad():
+        z = torch.randn(num_samples, Z_DIM, device=device) * psi
+        # For unconditional or single class - adjust as needed
+        y = torch.zeros(num_samples, dtype=torch.long, device=device)  # All class 0
+        
+        imgs = G(z, y)
+        imgs_np = (imgs.cpu().float() * 0.5 + 0.5).clamp(0, 1)
+    
+    fig, axes = plt.subplots(rows, cols,
+                             figsize=(cols * 2.5, rows * 2.5),
+                             gridspec_kw={'wspace': 0.02, 'hspace': 0.02})
+    
+    # Ensure axes is always 2D
+    if rows == 1 and cols == 1:
+        axes = np.array([[axes]])
+    elif rows == 1:
+        axes = axes[np.newaxis, :]
+    elif cols == 1:
+        axes = axes[:, np.newaxis]
+    
+    for idx in range(rows * cols):
+        row = idx // cols
+        col = idx % cols
+        ax = axes[row, col]
+        
+        if idx < num_samples:
+            img = imgs_np[idx].permute(1, 2, 0).numpy()
+            ax.imshow(img, interpolation='lanczos')
+        else:
+            ax.axis('off')  # Hide empty subplots
+        
+        ax.set_xticks([])
+        ax.set_yticks([])
+        for spine in ax.spines.values():
+            spine.set_visible(False)
+    
+    plt.tight_layout(pad=0.1)
+    
+    if save:
+        plt.savefig(save, bbox_inches='tight', pad_inches=0.1, dpi=150)
+    plt.show()
+
+
+def generate_grid_multi_class(G, device, Z_DIM, NUM_CLASSES, m, n, 
+                               CLASS_NAMES=None, psi=0.7, seed=None, save=False):
+    """
+    Generate m×n grid with different classes.
+    
+    Args:
+        m: number of rows
+        n: number of columns
+        Other args same as before
+    """
+    if seed is not None:
+        torch.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
+    
+    total = m * n
+    
+    with torch.no_grad():
+        z = torch.randn(total, Z_DIM, device=device) * psi
+        # Cycle through classes
+        y = torch.arange(total, device=device) % NUM_CLASSES
+        
+        imgs = G(z, y)
+        imgs_np = (imgs.cpu().float() * 0.5 + 0.5).clamp(0, 1)
+    
+    fig, axes = plt.subplots(m, n,
+                             figsize=(n * 2.5, m * 2.5),
+                             gridspec_kw={'wspace': 0.02, 'hspace': 0.02})
+    
+    # Ensure axes is always 2D
+    if m == 1 and n == 1:
+        axes = np.array([[axes]])
+    elif m == 1:
+        axes = axes[np.newaxis, :]
+    elif n == 1:
+        axes = axes[:, np.newaxis]
+    
+    for i in range(m):
+        for j in range(n):
+            idx = i * n + j
+            ax = axes[i, j]
+            
+            img = imgs_np[idx].permute(1, 2, 0).numpy()
+            ax.imshow(img, interpolation='lanczos')
+            ax.set_xticks([])
+            ax.set_yticks([])
+            for spine in ax.spines.values():
+                spine.set_visible(False)
+            
+            # Optional: show class name as title on first row
+            if i == 0 and CLASS_NAMES:
+                class_id = y[idx].item()
+                ax.set_title(CLASS_NAMES[class_id], fontsize=9, pad=3)
+    
+    plt.tight_layout(pad=0.1)
+    
+    if save:
+        plt.savefig(save, bbox_inches='tight', pad_inches=0.1, dpi=150)
     plt.show()
