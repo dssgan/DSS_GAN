@@ -1,6 +1,8 @@
 # DSS-GAN
 
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)]
+examples viewer
+
+![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg) 
 
 <p align="center">
   <img src="docs/dss_logo.png" width="320"/>
