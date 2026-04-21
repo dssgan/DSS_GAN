@@ -1,5 +1,7 @@
 # DSS-GAN
 
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)]
+
 <p align="center">
   <img src="docs/dss_logo.png" width="320"/>
 </p>
@@ -19,9 +21,9 @@ You can preview the examples in notebook directly in Google Colab:
 
 ---
 
-## ⚠️ Notes on `mamba-ssm`
+## Notes on `mamba-ssm` in colab
 
-The `mamba-ssm` dependency does not work reliably out-of-the-box in  due to CUDA and build compatibility issues.
+⚠️ The `mamba-ssm` dependency does not work reliably out-of-the-box in  due to CUDA and build compatibility issues.
 
 For a stable setup, it is strongly recommended to use the provided **Docker environment** instead of Colab.
 
