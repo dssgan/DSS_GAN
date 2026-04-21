@@ -2,7 +2,7 @@
 
 examples viewer
 
-![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg) 
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/dssgan/DSS_GAN/blob/main/viewer.ipynb)
 
 <p align="center">
   <img src="docs/dss_logo.png" width="320"/>
