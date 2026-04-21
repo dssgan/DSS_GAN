@@ -17,11 +17,10 @@ from model.discriminator import Discriminator
 from model.losses import d_logistic, g_logistic, r1_regularizer, path_length_regularizer
 from dataset import sample_class_grid, get_dataloader, make_class_rows
 
-
-def save_source_files(output_dir):
-    for f in ['generator.py', 'discriminator.py', 'config.py', 'train.py']:
-        if os.path.exists(f):
-            shutil.copy2(f, os.path.join(output_dir, f))
+# def save_source_files(output_dir):
+#     for f in ['generator.py', 'discriminator.py', 'config.py', 'train.py']:
+#         if os.path.exists(f):
+#             shutil.copy2(f, os.path.join(output_dir, f))
 
 
 def get_cosine_schedule_with_warmup(optimizer, warmup_epochs, total_epochs, min_lr):
@@ -57,7 +56,7 @@ def append_jsonl(out_dir, record, filename="gan_metrics_log.json"):
 
 def train():
     set_seed()
-    save_source_files(OUT_DIR)
+    # save_source_files(OUT_DIR)
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     torch.backends.cudnn.benchmark = True
@@ -95,8 +94,8 @@ def train():
     z_dbg = torch.randn(16, Z_DIM, device=device)
     y_dbg = torch.randint(0, NUM_CLASSES, (16,), device=device)
 
-    loader = get_dataloader(DATA_ROOT, CLASSES, BATCH_SIZE)
-    dataset_size    = len(loader.dataset)
+    dataloader = get_dataloader(DATASET, BATCH_SIZE)  
+    dataset_size    = len(dataloader.dataset)
     images_per_epoch = dataset_size
     EMA_SWITCH_EPOCH = int(EMA_SWITCH_IMAGES / images_per_epoch)
 
@@ -123,7 +122,7 @@ def train():
         data_time = d_time = g_time = 0.0
         iter_start = time.time()
 
-        for imgs, labels in loader:
+        for imgs, labels in dataloader:
             data_time += time.time() - iter_start
             imgs, labels = imgs.to(device), labels.to(device)
             b = imgs.size(0)

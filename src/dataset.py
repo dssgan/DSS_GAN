@@ -69,16 +69,17 @@ class UniversalDataset(Dataset):
         return img, label
 
 
-def get_dataloader(root: str, classes: List[str], bs: int, num_workers: int = 4) -> DataLoader:
+def get_dataloader(dataset: str, bs: int, num_workers: int = 4) -> DataLoader:
+    cfg = get_dataset_cfg(dataset)
+    
     tfm = tv.transforms.Compose([
         tv.transforms.RandomHorizontalFlip(),
         tv.transforms.ToTensor(),
         tv.transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
     ])
-    ds = UniversalDataset(root=root, classes=classes, transform=tfm)
+    ds = UniversalDataset(root=cfg["root"], classes=cfg["classes"], transform=tfm)
     return DataLoader(ds, batch_size=bs, shuffle=True, num_workers=num_workers,
                       drop_last=True, pin_memory=torch.cuda.is_available())
-
 
 @torch.no_grad()
 def make_class_rows(imgs, labels, num_classes: int, n_per_class: int = 10):

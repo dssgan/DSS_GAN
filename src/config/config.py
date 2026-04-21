@@ -3,11 +3,11 @@ import json
 
 CLASSES = sorted(["cat", "dog", "wild"])
 
-FID_REAL_IMG = "AFHQ_resize_256"
-IMG_SIZE = 256
+FID_REAL_IMG = "AFHQ_resize_128"
+IMG_SIZE = 128
 RESOLUTION = IMG_SIZE
 
-DATASET = "afhq"
+DATASET = "afhq128"
 
 NUM_CLASSES = len(CLASSES)
 BATCH_SIZE = 96
