@@ -1,33 +1,3 @@
-# generator.py — MAD-GAN Unified (128/256/512)
-"""
-Generator with resolution switching (128x128, 256x256, 512x512).
-
-Architecture (configurable):
-  Stage 0 : z → tokens → 8×8            (Mamba token mixer)
-  Stage 1 : 8×8   Mamba  (DLR + class)
-  Stage 2 : 16×16 Mamba  (DLR + class)
-  Stage 3 : 32×32 Mamba  (DLR + class)
-  Stage 4 : 64×64 Mamba  (DLR + class)
-  
-  128x128:
-    Stage 5 : 128×128 StyleGAN2Block + toRGB
-  
-  256x256:
-    Stage 5 : 128×128 Mamba (DLR + class)
-    Stage 6 : 256×256 StyleGAN2Block + toRGB
-  
-  512x512:
-    Stage 5 : 128×128 Mamba (DLR + class)
-    Stage 6 : 256×256 Mamba (DLR + class)
-    Stage 7 : 512×512 StyleGAN2Block + toRGB
-
-Novelty (unchanged):
-  - Directional Latent Routing (DLR): each scan direction gets its own
-    z-chunk + class embedding → gamma/beta modulation of Mamba input.
-  - Residual routing: gamma = tanh(γ)*clip + 1.0  (stable modulation)
-  - Class-conditioned noise injection (cascaded modulation)
-  - FiLM layers (optional, per config)
-"""
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -36,9 +6,6 @@ import numpy as np
 from mamba_ssm import Mamba
 
 
-# ============================================================
-# Utility modules (unchanged from 128x128)
-# ============================================================
 
 class FiLM(nn.Module):
     def __init__(self, num_features, num_classes):
@@ -185,9 +152,6 @@ class BlurUpsample(nn.Module):
         return self.act(self.conv(x))
 
 
-# ============================================================
-# Core: Directional Mamba block with DLR
-# ============================================================
 
 class RealVisionMamba2x2OnMap(nn.Module):
     def __init__(
@@ -422,9 +386,6 @@ class RealVisionMamba2x2OnMap(nn.Module):
         return result
 
 
-# ============================================================
-# Noise injection (unchanged)
-# ============================================================
 
 class NoiseInjection(nn.Module):
     """Cascaded modulation: noise → class → feature."""
@@ -457,10 +418,6 @@ class NoiseInjection(nn.Module):
         return x
 
 
-# ============================================================
-# StyleGAN2 block (unchanged)
-# ============================================================
-
 class StyleGAN2Block(nn.Module):
     def __init__(self, channels, num_classes):
         super().__init__()
@@ -492,10 +449,6 @@ class StyleGAN2Block(nn.Module):
 
         return F.leaky_relu(out, 0.2)
 
-
-# ============================================================
-# Generator — Unified (128/256/512)
-# ============================================================
 
 class Generator(nn.Module):
     def __init__(self, config):
@@ -538,7 +491,6 @@ class Generator(nn.Module):
         self.cfg_32x32   = config['mamba_32x32']
         self.cfg_64x64   = config['mamba_64x64']
         
-        # Resolution-specific configs
         if self.resolution >= 256:
             self.cfg_128x128 = config['mamba_128x128']
         if self.resolution >= 512:
@@ -551,7 +503,6 @@ class Generator(nn.Module):
         self.ch_32x32  = config['ch_32x32']
         self.ch_64x64  = config['ch_64x64']
         
-        # Resolution-specific channels
         self.ch_128x128 = config['ch_128x128']
         if self.resolution >= 256:
             self.ch_256x256 = config.get('ch_256x256', 196)
@@ -565,7 +516,6 @@ class Generator(nn.Module):
         self.rotation_modes = config.get('rotation_modes', ['none', 'rot180'])
         self.rotation_mode_to_k = {'none': None, 'rot90': 1, 'rot180': 2, 'rot270': 3}
 
-        # ── Stage 0: z → tokens → 8×8 ─────────────────────────
         self.z_to_tokens  = nn.Linear(self.z_tok_dim, 64 * self.ch_8x8)
         self.pos_enc64    = LearnedPositionalEncoding(64, self.ch_8x8)
         self.mamba_tokens = nn.ModuleList([
@@ -580,7 +530,6 @@ class Generator(nn.Module):
         self.class_embed = nn.Embedding(self.num_classes, self.ch_8x8)
         nn.init.normal_(self.class_embed.weight, std=0.02)
 
-        # ── Stage 1: 8×8 Mamba ────────────────────────────────
         self.mamba_8x8 = nn.ModuleList([
             RealVisionMamba2x2OnMap(
                 ch=self.ch_8x8,
@@ -607,7 +556,6 @@ class Generator(nn.Module):
         if self.cfg_8x8.get('noise', False):
             self.noise_8x8 = NoiseInjection(self.ch_8x8, self.num_classes, self.noise_strength)
 
-        # ── Stage 2: 16×16 Mamba ──────────────────────────────
         self.up_8_to_16 = self._make_upsample(self.ch_8x8, self.ch_16x16)
         self.mamba_16x16 = nn.ModuleList([
             RealVisionMamba2x2OnMap(
@@ -635,7 +583,6 @@ class Generator(nn.Module):
         if self.cfg_16x16.get('noise', False):
             self.noise_16x16 = NoiseInjection(self.ch_16x16, self.num_classes, self.noise_strength)
 
-        # ── Stage 3: 32×32 Mamba ──────────────────────────────
         self.up_16_to_32 = self._make_upsample(self.ch_16x16, self.ch_32x32)
 
         if self.use_pixel_shuffle_32:
@@ -675,7 +622,6 @@ class Generator(nn.Module):
         if self.cfg_32x32.get('noise', False):
             self.noise_32x32 = NoiseInjection(self.ch_32x32, self.num_classes, self.noise_strength)
 
-        # ── Stage 4: 64×64 Mamba ──────────────────────────────
         self.up_32_to_64 = self._make_upsample(self.ch_32x32, self.ch_64x64)
 
         if self.use_pixel_shuffle_64:
@@ -715,7 +661,6 @@ class Generator(nn.Module):
         if self.cfg_64x64.get('noise', False):
             self.noise_64x64 = NoiseInjection(self.ch_64x64, self.num_classes, self.noise_strength)
 
-        # ── Multi-scale skip projections ───────────────────────
         if self.use_multiscale_skips and self.skip_8_to_64 > 0:
             self.skip_proj_8_to_64 = nn.Sequential(
                 nn.Upsample(scale_factor=8, mode='nearest'),
@@ -727,14 +672,11 @@ class Generator(nn.Module):
                 nn.Conv2d(self.ch_16x16, self.ch_128x128, 1),
             )
 
-        # ── Stage 5: 128×128 (resolution-dependent) ──────────────
         self.up_64_to_128 = self._make_upsample(self.ch_64x64, self.ch_128x128)
         
         if self.resolution == 128:
-            # 128x128: StyleGAN2Block at 128
             self.style_refine_128 = StyleGAN2Block(self.ch_128x128, self.num_classes)
         else:
-            # 256/512: Mamba at 128
             self.mamba_128x128 = nn.ModuleList([
                 RealVisionMamba2x2OnMap(
                     ch=self.ch_128x128,
@@ -759,9 +701,7 @@ class Generator(nn.Module):
             ])
             self.film_128x128 = FiLM(self.ch_128x128, self.num_classes)
 
-        # ── Stage 6: 256×256 (only for 256/512) ───────────────────
         if self.resolution == 256:
-            # 256x256: StyleGAN2Block at 256
             self.up_128_to_256 = nn.Sequential(
                 nn.Upsample(scale_factor=2, mode='nearest'),
                 nn.Conv2d(self.ch_128x128, self.ch_256x256, 3, padding=1),
@@ -770,7 +710,6 @@ class Generator(nn.Module):
             self.style_refine_256 = StyleGAN2Block(self.ch_256x256, self.num_classes)
             
         elif self.resolution == 512:
-            # 512: Mamba at 256
             self.up_128_to_256 = self._make_upsample(self.ch_128x128, self.ch_256x256)
             
             self.mamba_256x256 = nn.ModuleList([
@@ -797,7 +736,6 @@ class Generator(nn.Module):
             ])
             self.film_256x256 = FiLM(self.ch_256x256, self.num_classes)
 
-        # ── Stage 7: 512×512 (only for 512) ───────────────────────
         if self.resolution == 512:
             self.up_256_to_512 = nn.Sequential(
                 nn.Upsample(scale_factor=2, mode='nearest'),
@@ -806,8 +744,7 @@ class Generator(nn.Module):
             )
             self.style_refine_512 = StyleGAN2Block(self.ch_512x512, self.num_classes)
 
-        # ── Output: toRGB ──────────────────────────────────────
-        # Determine final channel based on resolution
+
         if self.resolution == 128:
             final_ch_in = self.ch_128x128
         elif self.resolution == 256:
@@ -832,9 +769,8 @@ class Generator(nn.Module):
         self.directions_w   = []
         self.dlr_gamma_abs  = []
         self.dlr_beta_abs   = []
-        self.routing_alphas = []  # NEW: collect per-block alpha values
+        self.routing_alphas = []  
 
-    # ── helpers ───────────────────────────────────────────────
 
     def _make_upsample(self, in_ch, out_ch):
         if self.use_blur_upsample:
@@ -874,7 +810,6 @@ class Generator(nn.Module):
                     self.dlr_beta_abs.append(blk.last_beta_abs_mean)
         return h
 
-    # ── forward ───────────────────────────────────────────────
 
     def forward(self, z, y):
         B = z.size(0)
@@ -906,7 +841,6 @@ class Generator(nn.Module):
         t = t + self.class_embed(y).unsqueeze(1)
         h = t.transpose(1, 2).contiguous().view(B, self.ch_8x8, 8, 8)
 
-        # Stage 1: 8×8 Mamba
         h = self._run_mamba_stage(h, self.mamba_8x8, z_dir, y, rot_k)
         h_8x8 = h
         if self.film_enabled.get('8x8', False):
@@ -914,7 +848,6 @@ class Generator(nn.Module):
         if hasattr(self, 'noise_8x8'):
             h = self.noise_8x8(h, y)
 
-        # Stage 2: 16×16 Mamba
         h = self.up_8_to_16(h)
         h = self._run_mamba_stage(h, self.mamba_16x16, z_dir, y, rot_k)
         h_16x16 = h
@@ -923,7 +856,6 @@ class Generator(nn.Module):
         if hasattr(self, 'noise_16x16'):
             h = self.noise_16x16(h, y)
 
-        # Stage 3: 32×32 Mamba
         h = self.up_16_to_32(h)
         if self.use_pixel_shuffle_32:
             h = self.pixel_unshuffle_32(h)
@@ -937,7 +869,6 @@ class Generator(nn.Module):
         if hasattr(self, 'noise_32x32'):
             h = self.noise_32x32(h, y)
 
-        # Stage 4: 64×64 Mamba
         h = self.up_32_to_64(h)
         if self.use_multiscale_skips and self.skip_8_to_64 > 0:
             h = h + self.skip_8_to_64 * self.skip_proj_8_to_64(h_8x8)
@@ -953,33 +884,26 @@ class Generator(nn.Module):
         if hasattr(self, 'noise_64x64'):
             h = self.noise_64x64(h, y)
 
-        # Stage 5: 128×128 (resolution-dependent)
         h = self.up_64_to_128(h)
         if self.use_multiscale_skips and self.skip_16_to_128 > 0:
             h = h + self.skip_16_to_128 * self.skip_proj_16_to_128(h_16x16)
         
         if self.resolution == 128:
-            # 128: StyleGAN2Block at 128
             h = self.style_refine_128(h, y)
         else:
-            # 256/512: Mamba at 128
             h = self._run_mamba_stage(h, self.mamba_128x128, z_dir, y, rot_k)
             if self.film_enabled.get('128x128', False):
                 h = self.film_128x128(h, y)
 
-        # Stage 6: 256×256 (only for 256/512)
         if self.resolution == 256:
-            # 256: StyleGAN2Block at 256
             h = self.up_128_to_256(h)
             h = self.style_refine_256(h, y)
         elif self.resolution == 512:
-            # 512: Mamba at 256
             h = self.up_128_to_256(h)
             h = self._run_mamba_stage(h, self.mamba_256x256, z_dir, y, rot_k)
             if self.film_enabled.get('256x256', False):
                 h = self.film_256x256(h, y)
 
-        # Stage 7: 512×512 (only for 512)
         if self.resolution == 512:
             h = self.up_256_to_512(h)
             h = self.style_refine_512(h, y)

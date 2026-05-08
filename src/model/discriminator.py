@@ -1,7 +1,4 @@
-"""
-StyleGAN2-ADA Discriminator with resolution switching.
-Supports 128x128, 256x256, and 512x512.
-"""
+
 import math
 import torch
 import torch.nn as nn
@@ -60,14 +57,7 @@ class DiscriminatorBlock(nn.Module):
 
 
 class Discriminator(nn.Module):
-    """
-    StyleGAN2-ADA Discriminator with resolution switching.
 
-    Resolution configurations:
-      128x128: 128 → 64 → 32 → 16 → 8 → 4
-      256x256: 256 → 128 → 64 → 32 → 16 → 8 → 4  (extra block: 256→128)
-      512x512: 512 → 256 → 128 → 64 → 32 → 16 → 8 → 4  (extra blocks: 512→256→128)
-    """
     def __init__(self, resolution=256, num_classes=10, base_ch=96, channel_max=512, mbstd_group_size=8, **kwargs):
         super().__init__()
         self.resolution = resolution
@@ -110,10 +100,8 @@ class Discriminator(nn.Module):
                 '4':   nf(3),
             }
 
-        # FromRGB
         self.from_rgb = nn.Conv2d(3, channels[str(resolution)], kernel_size=1, bias=True)
 
-        # Resolution-specific blocks
         if resolution == 512:
             self.block_512 = DiscriminatorBlock(channels['512'], channels['256'], downsample=True)
             self.block_256 = DiscriminatorBlock(channels['256'], channels['128'], downsample=True)
@@ -124,22 +112,18 @@ class Discriminator(nn.Module):
         else:  # 128
             self.block_128 = DiscriminatorBlock(channels['128'], channels['64'],  downsample=True)
 
-        # Common blocks (all resolutions)
         self.block_64  = DiscriminatorBlock(channels['64'],  channels['32'],  downsample=True)
         self.block_32  = DiscriminatorBlock(channels['32'],  channels['16'],  downsample=True)
         self.block_16  = DiscriminatorBlock(channels['16'],  channels['8'],   downsample=True)
         self.block_8   = DiscriminatorBlock(channels['8'],   channels['4'],   downsample=True)
 
-        # MiniBatchStdDev + final 4x4 processing
         self.mbstd    = MiniBatchStdDev(group_size=mbstd_group_size, num_features=1)
         self.block_4  = nn.Conv2d(channels['4'] + 1, channels['4'], kernel_size=3, padding=1, bias=True)
         self.conv_out = nn.Conv2d(channels['4'], channels['4'], kernel_size=4, padding=0, bias=True)
 
-        # Output heads
         self.fc    = nn.Linear(channels['4'], 1, bias=True)
         self.embed = nn.Embedding(num_classes, channels['4'])
 
-        # Print architecture info
         print(f"\n{'='*60}")
         print(f"STYLEGAN2-ADA DISCRIMINATOR — {resolution}x{resolution}")
         print(f"{'='*60}")
@@ -156,7 +140,6 @@ class Discriminator(nn.Module):
         # x: [B, 3, resolution, resolution]
         h = F.leaky_relu(self.from_rgb(x), negative_slope=0.2)
 
-        # Resolution-specific path
         if self.resolution == 512:
             h = self.block_512(h)   # 512 → 256
             h = self.block_256(h)   # 256 → 128
@@ -167,13 +150,11 @@ class Discriminator(nn.Module):
         else:  # 128
             h = self.block_128(h)   # 128 → 64
 
-        # Common path (all resolutions)
         h = self.block_64(h)    # 64  → 32
         h = self.block_32(h)    # 32  → 16
         h = self.block_16(h)    # 16  → 8
         h = self.block_8(h)     # 8   → 4
 
-        # Final processing
         h = self.mbstd(h)
         h = F.leaky_relu(self.block_4(h),  negative_slope=0.2)
         h = F.leaky_relu(self.conv_out(h), negative_slope=0.2)
